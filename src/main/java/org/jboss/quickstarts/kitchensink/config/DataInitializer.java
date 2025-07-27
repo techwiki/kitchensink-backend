@@ -6,6 +6,7 @@ import org.jboss.quickstarts.kitchensink.model.Role;
 import org.jboss.quickstarts.kitchensink.model.User;
 import org.jboss.quickstarts.kitchensink.repository.MemberRepository;
 import org.jboss.quickstarts.kitchensink.repository.UserRepository;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
@@ -18,6 +19,9 @@ public class DataInitializer implements CommandLineRunner {
     private final MemberRepository memberRepository;
     private final PasswordEncoder passwordEncoder;
 
+    @Value("${admin.default.password}")
+    private String adminDefaultPassword;
+
     private static final String ADMIN_EMAIL = "admin@gmail.com";
 
     @Override
@@ -25,6 +29,8 @@ public class DataInitializer implements CommandLineRunner {
         // Check if admin user exists
         if (userRepository.findByEmail(ADMIN_EMAIL).isEmpty() && 
             memberRepository.findByEmail(ADMIN_EMAIL).isEmpty()) {
+            
+            System.out.println("Creating admin user with default password. Please change it after first login.");
             
             // Create admin member
             Member adminMember = new Member();
@@ -36,7 +42,7 @@ public class DataInitializer implements CommandLineRunner {
             // Create admin user
             User adminUser = User.builder()
                     .email(ADMIN_EMAIL)
-                    .password(passwordEncoder.encode("@dmin123"))
+                    .password(passwordEncoder.encode(adminDefaultPassword))
                     .role(Role.ROLE_ADMIN)
                     .memberId(savedMember.getId())
                     .build();

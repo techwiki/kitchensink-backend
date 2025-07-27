@@ -3,10 +3,12 @@ package org.jboss.quickstarts.kitchensink.controller;
 import jakarta.validation.Valid;
 import jakarta.validation.ValidationException;
 import lombok.RequiredArgsConstructor;
+import org.jboss.quickstarts.kitchensink.dto.RoleUpdateRequest;
 import org.jboss.quickstarts.kitchensink.model.Member;
 import org.jboss.quickstarts.kitchensink.model.Role;
 import org.jboss.quickstarts.kitchensink.model.User;
 import org.jboss.quickstarts.kitchensink.service.MemberService;
+import org.jboss.quickstarts.kitchensink.dto.MemberDTO;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -25,12 +27,12 @@ public class MemberController {
 
     @GetMapping
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<List<Member>> getAllMembers() {
+    public ResponseEntity<List<MemberDTO>> getAllMembers() {
         return ResponseEntity.ok(memberService.findAll());
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<Member> getMember(@PathVariable String id, @AuthenticationPrincipal User user) {
+    public ResponseEntity<MemberDTO> getMember(@PathVariable String id, @AuthenticationPrincipal User user) {
         if (!user.getRole().equals(Role.ROLE_ADMIN) && !user.getMemberId().equals(id)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
         }
@@ -76,12 +78,25 @@ public class MemberController {
     }
 
     @GetMapping("/me")
-    public ResponseEntity<Member> getCurrentMember(@AuthenticationPrincipal User user) {
+    public ResponseEntity<MemberDTO> getCurrentMember(@AuthenticationPrincipal User user) {
         if (user.getMemberId() == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No member profile found");
         }
         return memberService.findById(user.getMemberId())
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    @PatchMapping("/{id}/role")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<MemberDTO> updateMemberRole(
+            @PathVariable String id,
+            @RequestBody RoleUpdateRequest request
+    ) {
+        try {
+            return ResponseEntity.ok(memberService.updateRole(id, request.role()));
+        } catch (ValidationException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
     }
 } 

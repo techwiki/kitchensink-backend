@@ -6,6 +6,8 @@ import org.jboss.quickstarts.kitchensink.model.Role;
 import org.jboss.quickstarts.kitchensink.model.User;
 import org.jboss.quickstarts.kitchensink.repository.MemberRepository;
 import org.jboss.quickstarts.kitchensink.repository.UserRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -14,6 +16,7 @@ import org.springframework.stereotype.Component;
 @Component
 @RequiredArgsConstructor
 public class DataInitializer implements CommandLineRunner {
+    private static final Logger logger = LoggerFactory.getLogger(DataInitializer.class);
 
     private final UserRepository userRepository;
     private final MemberRepository memberRepository;
@@ -30,7 +33,7 @@ public class DataInitializer implements CommandLineRunner {
         if (userRepository.findByEmail(ADMIN_EMAIL).isEmpty() && 
             memberRepository.findByEmail(ADMIN_EMAIL).isEmpty()) {
             
-            System.out.println("Creating admin user with default password. Please change it after first login.");
+            logger.info("Creating admin user with default password");
             
             // Create admin member
             Member adminMember = new Member();
@@ -38,6 +41,7 @@ public class DataInitializer implements CommandLineRunner {
             adminMember.setEmail(ADMIN_EMAIL);
             adminMember.setPhoneNumber("1234567890");
             Member savedMember = memberRepository.save(adminMember);
+            logger.debug("Created admin member with ID: {}", savedMember.getId());
 
             // Create admin user
             User adminUser = User.builder()
@@ -48,9 +52,9 @@ public class DataInitializer implements CommandLineRunner {
                     .build();
             userRepository.save(adminUser);
             
-            System.out.println("Admin user created successfully");
+            logger.info("Admin user created successfully");
         } else {
-            System.out.println("Admin user already exists, skipping creation");
+            logger.info("Admin user already exists, skipping creation");
         }
     }
 } 

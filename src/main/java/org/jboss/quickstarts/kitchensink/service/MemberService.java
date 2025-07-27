@@ -8,34 +8,52 @@ import org.jboss.quickstarts.kitchensink.model.Role;
 import org.jboss.quickstarts.kitchensink.model.User;
 import org.jboss.quickstarts.kitchensink.repository.MemberRepository;
 import org.jboss.quickstarts.kitchensink.repository.UserRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
-import org.springframework.security.crypto.password.PasswordEncoder;
 
 @Service
 @RequiredArgsConstructor
 public class MemberService {
+    private static final Logger logger = LoggerFactory.getLogger(MemberService.class);
+
     private final MemberRepository memberRepository;
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
 
+    private Role resolveRole(Member member) {
+        logger.debug("Resolving role for member: {}", member.getEmail());
+        Optional<User> userOpt = userRepository.findByEmail(member.getEmail());
+        logger.debug("User found status: {}", userOpt.isPresent());
+        
+        if (userOpt.isPresent()) {
+            User user = userOpt.get();
+            logger.debug("User role resolved: {}", user.getRole());
+            return user.getRole();
+        }
+        return Role.ROLE_USER;
+    }
+
     public List<MemberDTO> findAll() {
-        List<Member> members = memberRepository.findAllByOrderByNameAsc();
-        return members.stream()
+        return memberRepository.findAll().stream()
                 .map(member -> {
-                    Optional<User> userOpt = userRepository.findByMemberId(member.getId());
-                    System.out.println("Finding role for member: " + member.getEmail());
-                    System.out.println("User found: " + userOpt.isPresent());
-                    Role role = userOpt
-                            .map(user -> {
-                                System.out.println("User role: " + user.getRole());
-                                return user.getRole();
-                            })
-                            .orElse(Role.ROLE_USER);
+                    logger.debug("Resolving role for member: {}", member.getEmail());
+                    Optional<User> userOpt = userRepository.findByEmail(member.getEmail());
+                    logger.debug("User found status: {}", userOpt.isPresent());
+                    
+                    Role role = Role.ROLE_USER;
+                    if (userOpt.isPresent()) {
+                        User user = userOpt.get();
+                        role = user.getRole();
+                        logger.debug("User role resolved: {}", role);
+                    }
+                    
                     return MemberDTO.fromMember(member, role);
                 })
                 .collect(Collectors.toList());
@@ -45,11 +63,11 @@ public class MemberService {
         return memberRepository.findById(id)
                 .map(member -> {
                     Optional<User> userOpt = userRepository.findByMemberId(member.getId());
-                    System.out.println("Finding role for member: " + member.getEmail());
-                    System.out.println("User found: " + userOpt.isPresent());
+                    logger.debug("Finding role for member: {}", member.getEmail());
+                    logger.debug("User found status: {}", userOpt.isPresent());
                     Role role = userOpt
                             .map(user -> {
-                                System.out.println("User role: " + user.getRole());
+                                logger.debug("User role: {}", user.getRole());
                                 return user.getRole();
                             })
                             .orElse(Role.ROLE_USER);

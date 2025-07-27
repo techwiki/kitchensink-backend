@@ -2,14 +2,21 @@ package org.jboss.quickstarts.kitchensink.security;
 
 import jakarta.annotation.PostConstruct;
 import lombok.Getter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import javax.crypto.Cipher;
 import java.security.*;
+import java.security.spec.MGF1ParameterSpec;
+import javax.crypto.spec.PSource;
+import javax.crypto.spec.OAEPParameterSpec;
 import java.util.Base64;
 
 @Service
 public class KeyPairService {
+    
+    private static final Logger logger = LoggerFactory.getLogger(KeyPairService.class);
     
     @Getter
     private KeyPair keyPair;
@@ -17,8 +24,9 @@ public class KeyPairService {
     @PostConstruct
     public void init() throws NoSuchAlgorithmException {
         KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("RSA");
-        keyPairGenerator.initialize(2048); // Use 2048 bits for good security
+        keyPairGenerator.initialize(2048);
         this.keyPair = keyPairGenerator.generateKeyPair();
+        logger.info("RSA key pair initialized with 2048-bit key");
     }
 
     public String getPublicKeyBase64() {
@@ -27,20 +35,29 @@ public class KeyPairService {
 
     public String decryptPassword(String encryptedPassword) {
         try {
-            System.out.println("Attempting to decrypt password. Encrypted length: " + encryptedPassword.length());
-            System.out.println("Encrypted password (first 50 chars): " + encryptedPassword.substring(0, Math.min(50, encryptedPassword.length())));
+            logger.debug("Attempting to decrypt password. Encrypted length: {}", encryptedPassword.length());
             
-            Cipher cipher = Cipher.getInstance("RSA/ECB/OAEPWithSHA-256AndMGF1Padding");
-            cipher.init(Cipher.DECRYPT_MODE, keyPair.getPrivate());
+            // Create OAEPParameterSpec to match Web Crypto API's RSA-OAEP with SHA-256
+            OAEPParameterSpec oaepParams = new OAEPParameterSpec(
+                "SHA-256",
+                "MGF1",
+                MGF1ParameterSpec.SHA256,
+                PSource.PSpecified.DEFAULT
+            );
+            
+            // Initialize cipher with specific OAEP parameters
+            Cipher cipher = Cipher.getInstance("RSA/ECB/OAEPPadding");
+            cipher.init(Cipher.DECRYPT_MODE, keyPair.getPrivate(), oaepParams);
+            
             byte[] encryptedBytes = Base64.getDecoder().decode(encryptedPassword);
-            System.out.println("Decoded byte array length: " + encryptedBytes.length);
+            logger.debug("Decoded byte array length: {}", encryptedBytes.length);
             
             byte[] decryptedBytes = cipher.doFinal(encryptedBytes);
             String result = new String(decryptedBytes);
-            System.out.println("Successfully decrypted password");
+            logger.debug("Password decrypted successfully");
             return result;
         } catch (Exception e) {
-            System.err.println("Decryption failed: " + e.getMessage());
+            logger.error("Failed to decrypt password", e);
             throw new RuntimeException("Failed to decrypt password", e);
         }
     }

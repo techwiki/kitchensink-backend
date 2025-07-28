@@ -27,6 +27,12 @@ public class MemberService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
 
+    public static class MemberNotFoundException extends RuntimeException {
+        public MemberNotFoundException(String message) {
+            super(message);
+        }
+    }
+
     private Role resolveRole(Member member) {
         logger.debug("Resolving role for member: {}", member.getEmail());
         Optional<User> userOpt = userRepository.findByEmail(member.getEmail());
@@ -111,7 +117,7 @@ public class MemberService {
 
         // Check if member exists
         Member existingMember = memberRepository.findById(member.getId())
-                .orElseThrow(() -> new ValidationException("Member not found"));
+                .orElseThrow(() -> new MemberNotFoundException("Member not found"));
 
         // Check if email is being changed and if new email already exists
         if (!existingMember.getEmail().equals(member.getEmail())) {
@@ -126,7 +132,7 @@ public class MemberService {
     @Transactional
     public MemberDTO updateRole(String memberId, Role newRole) {
         Member member = memberRepository.findById(memberId)
-                .orElseThrow(() -> new ValidationException("Member not found"));
+                .orElseThrow(() -> new MemberNotFoundException("Member not found"));
 
         User user = userRepository.findByMemberId(memberId)
                 .orElseThrow(() -> new ValidationException("User account not found"));
@@ -139,6 +145,18 @@ public class MemberService {
 
     @Transactional
     public void delete(String id) {
+        if (!memberRepository.existsById(id)) {
+            throw new MemberNotFoundException("Member not found");
+        }
+        
+        // Delete associated user first
+        userRepository.findByMemberId(id).ifPresent(user -> {
+            logger.debug("Deleting associated user with email: {}", user.getEmail());
+            userRepository.delete(user);
+        });
+
+        // Then delete the member
+        logger.debug("Deleting member with ID: {}", id);
         memberRepository.deleteById(id);
     }
 } 

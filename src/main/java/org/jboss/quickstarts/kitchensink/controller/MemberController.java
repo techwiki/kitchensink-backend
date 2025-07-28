@@ -8,6 +8,7 @@ import org.jboss.quickstarts.kitchensink.model.Member;
 import org.jboss.quickstarts.kitchensink.model.Role;
 import org.jboss.quickstarts.kitchensink.model.User;
 import org.jboss.quickstarts.kitchensink.service.MemberService;
+import org.jboss.quickstarts.kitchensink.service.MemberService.MemberNotFoundException;
 import org.jboss.quickstarts.kitchensink.dto.MemberDTO;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -26,7 +27,7 @@ public class MemberController {
     private final MemberService memberService;
 
     @GetMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<List<MemberDTO>> getAllMembers() {
         return ResponseEntity.ok(memberService.findAll());
     }
@@ -38,11 +39,11 @@ public class MemberController {
         }
         return memberService.findById(id)
                 .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Member not found"));
     }
 
     @PostMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<Member> createMember(@Valid @RequestBody Member member) {
         try {
             Member savedMember = memberService.save(member);
@@ -67,14 +68,20 @@ public class MemberController {
             return ResponseEntity.ok(updatedMember);
         } catch (ValidationException e) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, e.getMessage());
+        } catch (MemberNotFoundException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
         }
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<Void> deleteMember(@PathVariable String id) {
-        memberService.delete(id);
-        return ResponseEntity.noContent().build();
+        try {
+            memberService.delete(id);
+            return ResponseEntity.noContent().build();
+        } catch (MemberNotFoundException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
+        }
     }
 
     @GetMapping("/me")
@@ -88,7 +95,7 @@ public class MemberController {
     }
 
     @PatchMapping("/{id}/role")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<MemberDTO> updateMemberRole(
             @PathVariable String id,
             @RequestBody RoleUpdateRequest request
@@ -97,6 +104,8 @@ public class MemberController {
             return ResponseEntity.ok(memberService.updateRole(id, request.role()));
         } catch (ValidationException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        } catch (MemberNotFoundException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
         }
     }
 } 

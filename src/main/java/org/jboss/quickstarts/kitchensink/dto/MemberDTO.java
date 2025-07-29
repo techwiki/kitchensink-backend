@@ -23,4 +23,13 @@ public class MemberDTO {
                 .role(role)
                 .build();
     }
+
+    public Member toMember() {
+        return Member.builder()
+                .id(this.id)
+                .name(this.name)
+                .email(this.email)
+                .phoneNumber(this.phoneNumber)
+                .build();
+    }
 } 

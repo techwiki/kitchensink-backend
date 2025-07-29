@@ -26,6 +26,8 @@ public class DataInitializer implements CommandLineRunner {
     private String adminDefaultPassword;
 
     private static final String ADMIN_EMAIL = "admin@gmail.com";
+    private static final String ADMIN_NAME = "Admin User";
+    private static final String ADMIN_PHONE = "1234567890";
 
     @Override
     public void run(String... args) {
@@ -37,9 +39,9 @@ public class DataInitializer implements CommandLineRunner {
             
             // Create admin member
             Member adminMember = new Member();
-            adminMember.setName("Admin User");
+            adminMember.setName(ADMIN_NAME);
             adminMember.setEmail(ADMIN_EMAIL);
-            adminMember.setPhoneNumber("1234567890");
+            adminMember.setPhoneNumber(ADMIN_PHONE);
             Member savedMember = memberRepository.save(adminMember);
             logger.debug("Created admin member with ID: {}", savedMember.getId());
 

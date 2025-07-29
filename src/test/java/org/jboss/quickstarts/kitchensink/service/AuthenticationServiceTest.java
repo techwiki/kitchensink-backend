@@ -74,7 +74,12 @@ class AuthenticationServiceTest {
         keyPairService.init();
         
         // Set up real MemberService instance with mocked repositories
-        memberService = new MemberService(memberRepository, userRepository, passwordEncoder);
+        memberService = new MemberService(
+            memberRepository, 
+            userRepository, 
+            passwordEncoder,
+            keyPairService
+        );
         
         // Set up real AuthenticationService instance
         authenticationService = new AuthenticationService(
@@ -128,7 +133,6 @@ class AuthenticationServiceTest {
         when(memberRepository.findByEmail("test@example.com")).thenReturn(Optional.empty());
         when(memberRepository.save(any(Member.class))).thenReturn(member);
         when(userRepository.findByEmail("test@example.com")).thenReturn(Optional.empty());
-        when(passwordEncoder.encode("changeme123")).thenReturn("hashedDefaultPassword");
         when(passwordEncoder.encode(plainPassword)).thenReturn(hashedPassword);
         when(userRepository.save(any(User.class))).thenReturn(user);
 
@@ -150,10 +154,10 @@ class AuthenticationServiceTest {
 
         // Verify user creation (both from MemberService and AuthenticationService)
         ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
-        verify(userRepository, times(2)).save(userCaptor.capture());
+        verify(userRepository, times(1)).save(userCaptor.capture());
         
         // Check the user created by AuthenticationService
-        User authUser = userCaptor.getAllValues().get(1);
+        User authUser = userCaptor.getAllValues().get(0);
         assertEquals("test@example.com", authUser.getEmail());
         assertEquals(hashedPassword, authUser.getPassword());
         assertEquals(Role.ROLE_USER, authUser.getRole());
@@ -179,7 +183,6 @@ class AuthenticationServiceTest {
         when(memberRepository.findByEmail(anyString())).thenReturn(Optional.empty());
         when(memberRepository.save(any(Member.class))).thenReturn(member);
         when(userRepository.findByEmail(anyString())).thenReturn(Optional.empty());
-        when(passwordEncoder.encode("changeme123")).thenReturn("hashedDefaultPassword");
         when(passwordEncoder.encode(plainPassword)).thenReturn(hashedPassword);
         when(userRepository.save(any(User.class))).thenReturn(user);
 
@@ -257,37 +260,6 @@ class AuthenticationServiceTest {
     }
 
     @Test
-    void register_ShouldSetCorrectUserRole() throws Exception {
-        // Given
-        String plainPassword = "plainPassword";
-        String encryptedPassword = encryptPasswordForTesting(plainPassword);
-        RegisterRequest testRequest = new RegisterRequest(
-                "test@example.com",
-                encryptedPassword,
-                "John Doe",
-                "1234567890"
-        );
-
-        when(memberRepository.findByEmail(anyString())).thenReturn(Optional.empty());
-        when(memberRepository.save(any(Member.class))).thenReturn(member);
-        when(userRepository.findByEmail(anyString())).thenReturn(Optional.empty());
-        when(passwordEncoder.encode("changeme123")).thenReturn("hashedDefaultPassword");
-        when(passwordEncoder.encode(plainPassword)).thenReturn("hashedPassword");
-        when(userRepository.save(any(User.class))).thenReturn(user);
-
-        // When
-        authenticationService.register(testRequest);
-
-        // Then
-        ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
-        verify(userRepository, times(2)).save(userCaptor.capture());
-        
-        // Check the user created by AuthenticationService (second call)
-        User authUser = userCaptor.getAllValues().get(1);
-        assertEquals(Role.ROLE_USER, authUser.getRole());
-    }
-
-    @Test
     void register_ShouldLinkUserToMember() throws Exception {
         // Given
         String plainPassword = "plainPassword";
@@ -302,7 +274,6 @@ class AuthenticationServiceTest {
         when(memberRepository.findByEmail(anyString())).thenReturn(Optional.empty());
         when(memberRepository.save(any(Member.class))).thenReturn(member);
         when(userRepository.findByEmail(anyString())).thenReturn(Optional.empty());
-        when(passwordEncoder.encode("changeme123")).thenReturn("hashedDefaultPassword");
         when(passwordEncoder.encode(plainPassword)).thenReturn("hashedPassword");
         when(userRepository.save(any(User.class))).thenReturn(user);
 
@@ -311,10 +282,10 @@ class AuthenticationServiceTest {
 
         // Then
         ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
-        verify(userRepository, times(2)).save(userCaptor.capture());
+        verify(userRepository, times(1)).save(userCaptor.capture());
         
         // Check the user created by AuthenticationService (second call)
-        User authUser = userCaptor.getAllValues().get(1);
+        User authUser = userCaptor.getAllValues().get(0);
         assertEquals(member.getId(), authUser.getMemberId());
     }
 
@@ -333,7 +304,6 @@ class AuthenticationServiceTest {
         when(memberRepository.findByEmail(anyString())).thenReturn(Optional.empty());
         when(memberRepository.save(any(Member.class))).thenReturn(member);
         when(userRepository.findByEmail(anyString())).thenReturn(Optional.empty());
-        when(passwordEncoder.encode("changeme123")).thenReturn("hashedDefaultPassword");
         when(passwordEncoder.encode(plainPassword)).thenReturn("hashedPassword");
         when(userRepository.save(any(User.class))).thenReturn(user);
 

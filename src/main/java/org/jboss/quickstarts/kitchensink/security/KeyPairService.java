@@ -15,15 +15,16 @@ import java.util.Base64;
 
 @Service
 public class KeyPairService {
-    
+
     private static final Logger logger = LoggerFactory.getLogger(KeyPairService.class);
-    
+    private final String ENC_ALGO_NAME = "RSA";
+
     @Getter
     private KeyPair keyPair;
-    
+
     @PostConstruct
     public void init() throws NoSuchAlgorithmException {
-        KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("RSA");
+        KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance(ENC_ALGO_NAME);
         keyPairGenerator.initialize(2048);
         this.keyPair = keyPairGenerator.generateKeyPair();
         logger.info("RSA key pair initialized with 2048-bit key");
@@ -36,22 +37,22 @@ public class KeyPairService {
     public String decryptPassword(String encryptedPassword) {
         try {
             logger.debug("Attempting to decrypt password. Encrypted length: {}", encryptedPassword.length());
-            
+
             // Create OAEPParameterSpec to match Web Crypto API's RSA-OAEP with SHA-256
             OAEPParameterSpec oaepParams = new OAEPParameterSpec(
-                "SHA-256",
-                "MGF1",
-                MGF1ParameterSpec.SHA256,
-                PSource.PSpecified.DEFAULT
+                    "SHA-256",
+                    "MGF1",
+                    MGF1ParameterSpec.SHA256,
+                    PSource.PSpecified.DEFAULT
             );
-            
+
             // Initialize cipher with specific OAEP parameters
             Cipher cipher = Cipher.getInstance("RSA/ECB/OAEPPadding");
             cipher.init(Cipher.DECRYPT_MODE, keyPair.getPrivate(), oaepParams);
-            
+
             byte[] encryptedBytes = Base64.getDecoder().decode(encryptedPassword);
             logger.debug("Decoded byte array length: {}", encryptedBytes.length);
-            
+
             byte[] decryptedBytes = cipher.doFinal(encryptedBytes);
             String result = new String(decryptedBytes);
             logger.debug("Password decrypted successfully");
@@ -59,6 +60,27 @@ public class KeyPairService {
         } catch (Exception e) {
             logger.error("Failed to decrypt password", e);
             throw new RuntimeException("Failed to decrypt password", e);
+        }
+    }
+
+    public String encryptPassword(String password) {
+        try {
+            logger.debug("Encrypting password. Plain length: {}", password.length());
+            OAEPParameterSpec oaepParams = new OAEPParameterSpec(
+                    "SHA-256",
+                    "MGF1",
+                    MGF1ParameterSpec.SHA256,
+                    PSource.PSpecified.DEFAULT
+            );
+            Cipher cipher = Cipher.getInstance("RSA/ECB/OAEPPadding");
+            cipher.init(Cipher.ENCRYPT_MODE, keyPair.getPublic(), oaepParams);
+            byte[] encryptedBytes = cipher.doFinal(password.getBytes());
+            String encryptedBase64 = Base64.getEncoder().encodeToString(encryptedBytes);
+            logger.debug("Password encrypted successfully. Encrypted length: {}", encryptedBase64.length());
+            return encryptedBase64;
+        } catch (Exception e) {
+            logger.error("Failed to encrypt password", e);
+            throw new RuntimeException("Failed to encrypt password", e);
         }
     }
 } 

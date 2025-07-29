@@ -3,11 +3,13 @@ package org.jboss.quickstarts.kitchensink.service;
 import jakarta.validation.ValidationException;
 import lombok.RequiredArgsConstructor;
 import org.jboss.quickstarts.kitchensink.dto.MemberDTO;
+import org.jboss.quickstarts.kitchensink.dto.RegisterRequest;
 import org.jboss.quickstarts.kitchensink.model.Member;
 import org.jboss.quickstarts.kitchensink.model.Role;
 import org.jboss.quickstarts.kitchensink.model.User;
 import org.jboss.quickstarts.kitchensink.repository.MemberRepository;
 import org.jboss.quickstarts.kitchensink.repository.UserRepository;
+import org.jboss.quickstarts.kitchensink.security.KeyPairService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -26,6 +28,7 @@ public class MemberService {
     private final MemberRepository memberRepository;
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final KeyPairService keyPairService;
 
     public static class MemberNotFoundException extends RuntimeException {
         public MemberNotFoundException(String message) {
@@ -87,25 +90,6 @@ public class MemberService {
             throw new ValidationException("Email already exists");
         }
         Member savedMember = memberRepository.save(member);
-
-        // Check if a user account already exists for this email
-        Optional<User> existingUser = userRepository.findByEmail(member.getEmail());
-        if (existingUser.isEmpty()) {
-            // Create a new user account with a default password
-            User user = User.builder()
-                    .email(member.getEmail())
-                    .password(passwordEncoder.encode("changeme123")) // Default password that should be changed on first login
-                    .role(Role.ROLE_USER)
-                    .memberId(savedMember.getId())
-                    .build();
-            userRepository.save(user);
-        } else {
-            // Update existing user's memberId
-            User user = existingUser.get();
-            user.setMemberId(savedMember.getId());
-            userRepository.save(user);
-        }
-
         return savedMember;
     }
 
@@ -119,14 +103,16 @@ public class MemberService {
         Member existingMember = memberRepository.findById(member.getId())
                 .orElseThrow(() -> new MemberNotFoundException("Member not found"));
 
-        // Check if email is being changed and if new email already exists
+        // Email cannot be updated
         if (!existingMember.getEmail().equals(member.getEmail())) {
-            memberRepository.findByEmail(member.getEmail()).ifPresent(m -> {
-                throw new ValidationException("Email already exists");
-            });
+            throw new ValidationException("Email cannot be updated");
         }
 
-        return memberRepository.save(member);
+        // Update allowed fields
+        existingMember.setName(member.getName());
+        existingMember.setPhoneNumber(member.getPhoneNumber());
+
+        return memberRepository.save(existingMember);
     }
 
     @Transactional
@@ -141,6 +127,40 @@ public class MemberService {
         userRepository.save(user);
 
         return MemberDTO.fromMember(member, newRole);
+    }
+
+    @Transactional
+    public MemberDTO createMemberWithUser(RegisterRequest request) {
+        if (memberRepository.findByEmail(request.email()).isPresent()) {
+            throw new ValidationException("Email already exists");
+        }
+
+        // Check if user already exists
+        if (userRepository.findByEmail(request.email()).isPresent()) {
+            throw new ValidationException("User account already exists");
+        }
+
+        // Create and save member
+        Member member = Member.builder()
+                .name(request.name())
+                .email(request.email())
+                .phoneNumber(request.phoneNumber())
+                .build();
+        Member savedMember = memberRepository.save(member);
+        logger.debug("Created member with ID: {}", savedMember.getId());
+
+        // Create user account with the provided password
+        String decryptedPassword = keyPairService.decryptPassword(request.password());
+        User user = User.builder()
+                .email(request.email())
+                .password(passwordEncoder.encode(decryptedPassword))
+                .role(Role.ROLE_USER)
+                .memberId(savedMember.getId())
+                .build();
+        userRepository.save(user);
+        logger.debug("Created user account for member ID: {}", savedMember.getId());
+
+        return MemberDTO.fromMember(savedMember, Role.ROLE_USER);
     }
 
     @Transactional

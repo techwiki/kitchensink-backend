@@ -2,6 +2,7 @@ package org.jboss.quickstarts.kitchensink.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.jboss.quickstarts.kitchensink.dto.MemberDTO;
+import org.jboss.quickstarts.kitchensink.dto.RegisterRequest;
 import org.jboss.quickstarts.kitchensink.dto.RoleUpdateRequest;
 import org.jboss.quickstarts.kitchensink.model.Member;
 import org.jboss.quickstarts.kitchensink.model.Role;
@@ -9,6 +10,7 @@ import org.jboss.quickstarts.kitchensink.model.User;
 import org.jboss.quickstarts.kitchensink.repository.MemberRepository;
 import org.jboss.quickstarts.kitchensink.repository.UserRepository;
 import org.jboss.quickstarts.kitchensink.security.JwtService;
+import org.jboss.quickstarts.kitchensink.security.KeyPairService;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -22,9 +24,12 @@ import org.testcontainers.containers.MongoDBContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.web.servlet.MvcResult;
+import org.jboss.quickstarts.kitchensink.dto.AuthRequest;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import static org.hamcrest.Matchers.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -67,6 +72,9 @@ public class MemberControllerIntegrationTest {
 
     @Autowired
     private JwtService jwtService;
+
+    @Autowired
+    private KeyPairService keyPairService;
 
     private String adminToken;
     private String userToken;
@@ -246,31 +254,72 @@ public class MemberControllerIntegrationTest {
         @Order(1)
         @DisplayName("Should create member when authenticated as admin")
         void createMember_AsAdmin_ShouldCreateMember() throws Exception {
-            Member newMember = createTestMember("newmember@test.com");
+            RegisterRequest request = new RegisterRequest(
+                "newmember@test.com",
+                keyPairService.encryptPassword("newmember123"),
+                "New Member",
+                "9876543210"
+            );
             
-            mockMvc.perform(post("/api/members")
+            MvcResult result = mockMvc.perform(post("/api/members")
                     .header("Authorization", createAuthHeader(adminToken))
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content(objectMapper.writeValueAsString(newMember)))
+                    .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isCreated())
-                    .andExpect(jsonPath("$.email", is(newMember.getEmail())))
-                    .andExpect(jsonPath("$.id", notNullValue()));
+                    .andExpect(jsonPath("$.id").exists())
+                    .andExpect(jsonPath("$.email").value("newmember@test.com"))
+                    .andExpect(jsonPath("$.name").value("New Member"))
+                    .andExpect(jsonPath("$.phoneNumber").value("9876543210"))
+                    .andExpect(jsonPath("$.role").value("ROLE_USER"))
+                    .andReturn();
+
+            // Extract the created member's ID
+            String response = result.getResponse().getContentAsString();
+            String createdMemberId = objectMapper.readTree(response).get("id").asText();
+
+            // Verify member was created in database
+            Optional<Member> createdMember = memberRepository.findById(createdMemberId);
+            assertTrue(createdMember.isPresent());
+            assertEquals("newmember@test.com", createdMember.get().getEmail());
+
+            // Verify user was created with correct role
+            Optional<User> createdUser = userRepository.findByEmail("newmember@test.com");
+            assertTrue(createdUser.isPresent());
+            assertEquals(Role.ROLE_USER, createdUser.get().getRole());
+            assertEquals(createdMemberId, createdUser.get().getMemberId());
+
+            // Verify can login with created credentials
+            AuthRequest loginRequest = new AuthRequest(
+                "newmember@test.com",
+                keyPairService.encryptPassword("newmember123")
+            );
+
+            mockMvc.perform(post("/api/auth/login")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(loginRequest)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.token").exists());
 
             // Cleanup
-            memberRepository.findByEmail(newMember.getEmail())
-                    .ifPresent(member -> memberRepository.delete(member));
+            memberRepository.deleteById(createdMemberId);
+            userRepository.delete(createdUser.get());
         }
 
         @Test
         @Order(2)
         @DisplayName("Should return forbidden when authenticated as regular user")
         void createMember_AsUser_ShouldReturnForbidden() throws Exception {
-            Member newMember = createTestMember("forbidden@test.com");
+            RegisterRequest request = new RegisterRequest(
+                "forbidden@test.com",
+                keyPairService.encryptPassword("forbidden123"),
+                "Forbidden User",
+                "9876543210"
+            );
             
             mockMvc.perform(post("/api/members")
                     .header("Authorization", createAuthHeader(userToken))
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content(objectMapper.writeValueAsString(newMember)))
+                    .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isForbidden());
         }
 
@@ -278,13 +327,74 @@ public class MemberControllerIntegrationTest {
         @Order(3)
         @DisplayName("Should return bad request when data is invalid")
         void createMember_WithInvalidData_ShouldReturnBadRequest() throws Exception {
-            Member invalidMember = new Member();
-            // Missing required fields
+            // Test with missing name
+            RegisterRequest missingName = new RegisterRequest(
+                "test@test.com",
+                keyPairService.encryptPassword("test123"),
+                "Test 123",  // name with number
+                "1234567890"
+            );
             
             mockMvc.perform(post("/api/members")
                     .header("Authorization", createAuthHeader(adminToken))
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content(objectMapper.writeValueAsString(invalidMember)))
+                    .content(objectMapper.writeValueAsString(missingName)))
+                    .andExpect(status().isBadRequest());
+
+            // Test with invalid email
+            RegisterRequest invalidEmail = new RegisterRequest(
+                "not-an-email",
+                keyPairService.encryptPassword("test123"),
+                "Test Name",
+                "1234567890"
+            );
+            
+            mockMvc.perform(post("/api/members")
+                    .header("Authorization", createAuthHeader(adminToken))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(invalidEmail)))
+                    .andExpect(status().isBadRequest());
+
+            // Test with invalid phone number (too short)
+            RegisterRequest invalidPhone = new RegisterRequest(
+                "test@test.com",
+                keyPairService.encryptPassword("test123"),
+                "Test Name",
+                "123"  // too short
+            );
+            
+            mockMvc.perform(post("/api/members")
+                    .header("Authorization", createAuthHeader(adminToken))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(invalidPhone)))
+                    .andExpect(status().isBadRequest());
+
+            // Test with missing password
+            RegisterRequest missingPassword = new RegisterRequest(
+                "test@test.com",
+                "",  // empty password
+                "Test Name",
+                "1234567890"
+            );
+            
+            mockMvc.perform(post("/api/members")
+                    .header("Authorization", createAuthHeader(adminToken))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(missingPassword)))
+                    .andExpect(status().isBadRequest());
+
+            // Test with null values
+            RegisterRequest nullValues = new RegisterRequest(
+                null,
+                null,
+                null,
+                null
+            );
+            
+            mockMvc.perform(post("/api/members")
+                    .header("Authorization", createAuthHeader(adminToken))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(nullValues)))
                     .andExpect(status().isBadRequest());
         }
 
@@ -292,12 +402,17 @@ public class MemberControllerIntegrationTest {
         @Order(4)
         @DisplayName("Should return conflict when email already exists")
         void createMember_WithDuplicateEmail_ShouldReturnConflict() throws Exception {
-            Member duplicateMember = createTestMember(testMember.getEmail());
+            RegisterRequest duplicateRequest = new RegisterRequest(
+                testMember.getEmail(),  // using existing email
+                keyPairService.encryptPassword("duplicate123"),
+                "Duplicate User",
+                "9998887777"
+            );
             
             mockMvc.perform(post("/api/members")
                     .header("Authorization", createAuthHeader(adminToken))
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content(objectMapper.writeValueAsString(duplicateMember)))
+                    .content(objectMapper.writeValueAsString(duplicateRequest)))
                     .andExpect(status().isConflict());
         }
     }
@@ -598,34 +713,47 @@ public class MemberControllerIntegrationTest {
         @DisplayName("Should handle complete member lifecycle")
         void memberLifecycle_ShouldHandleCreateUpdateDeleteFlow() throws Exception {
             // 1. Create Member
-            Member newMember = createTestMember("lifecycle@test.com");
+            RegisterRequest registerRequest = new RegisterRequest(
+                "lifecycle@test.com",
+                keyPairService.encryptPassword("lifecycle123"),
+                "Lifecycle Test",
+                "1234567890"
+            );
+
             String memberId = mockMvc.perform(post("/api/members")
                     .header("Authorization", createAuthHeader(adminToken))
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content(objectMapper.writeValueAsString(newMember)))
+                    .content(objectMapper.writeValueAsString(registerRequest)))
                     .andExpect(status().isCreated())
                     .andExpect(jsonPath("$.id", notNullValue()))
+                    .andExpect(jsonPath("$.email", is("lifecycle@test.com")))
+                    .andExpect(jsonPath("$.name", is("Lifecycle Test")))
+                    .andExpect(jsonPath("$.role", is("ROLE_USER")))
                     .andReturn()
                     .getResponse()
                     .getContentAsString();
 
             memberId = objectMapper.readTree(memberId).get("id").asText();
 
-            // 2. Verify Created Member
+            // 2. Verify Created Member and User
             mockMvc.perform(get("/api/members/{id}", memberId)
                     .header("Authorization", createAuthHeader(adminToken)))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.email", is("lifecycle@test.com")));
 
+            // Verify user was created
+            assertTrue(userRepository.findByEmail("lifecycle@test.com").isPresent());
+            assertEquals(Role.ROLE_USER, userRepository.findByEmail("lifecycle@test.com").get().getRole());
+
             // 3. Update Member
-            newMember.setId(memberId);
-            newMember.setName("Updated Lifecycle Name");
-            newMember.setPhoneNumber("9876543210");
+            Member memberToUpdate = memberRepository.findById(memberId).get();
+            memberToUpdate.setName("Updated Lifecycle Name");
+            memberToUpdate.setPhoneNumber("9876543210");
 
             mockMvc.perform(put("/api/members/{id}", memberId)
                     .header("Authorization", createAuthHeader(adminToken))
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content(objectMapper.writeValueAsString(newMember)))
+                    .content(objectMapper.writeValueAsString(MemberDTO.fromMember(memberToUpdate, Role.ROLE_USER))))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.name", is("Updated Lifecycle Name")))
                     .andExpect(jsonPath("$.phoneNumber", is("9876543210")));
@@ -644,10 +772,11 @@ public class MemberControllerIntegrationTest {
                     .header("Authorization", createAuthHeader(adminToken)))
                     .andExpect(status().isNoContent());
 
-            // 6. Verify Deletion
+            // 6. Verify Deletion of both Member and User
             mockMvc.perform(get("/api/members/{id}", memberId)
                     .header("Authorization", createAuthHeader(adminToken)))
                     .andExpect(status().isNotFound());
+            assertFalse(userRepository.findByEmail("lifecycle@test.com").isPresent());
         }
     }
 

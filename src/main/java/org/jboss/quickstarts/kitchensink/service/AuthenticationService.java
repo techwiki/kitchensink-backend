@@ -16,12 +16,14 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import jakarta.validation.ValidationException;
 
 @Service
 @RequiredArgsConstructor
 public class AuthenticationService {
     private static final Logger logger = LoggerFactory.getLogger(AuthenticationService.class);
-    
+
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
@@ -29,39 +31,53 @@ public class AuthenticationService {
     private final MemberService memberService;
     private final KeyPairService keyPairService;
 
+    @Transactional
     public AuthResponse register(RegisterRequest request) {
         logger.info("Processing registration request for email: {}", request.email());
-        String decryptedPassword = keyPairService.decryptPassword(request.password());
-        
-        // Create member first
-        Member member = new Member();
-        member.setName(request.name());
-        member.setEmail(request.email());
-        member.setPhoneNumber(request.phoneNumber());
-        Member savedMember = memberService.save(member);
-        logger.debug("Created member with ID: {}", savedMember.getId());
 
-        // Create user account with decrypted and then hashed password
-        var user = User.builder()
-                .email(request.email())
-                .password(passwordEncoder.encode(decryptedPassword))
-                .role(Role.ROLE_USER)
-                .memberId(savedMember.getId())
-                .build();
-        userRepository.save(user);
-        logger.debug("Created user account for member ID: {}", savedMember.getId());
+        // Check if user already exists
+        if (userRepository.findByEmail(request.email()).isPresent()) {
+            logger.warn("Registration failed: Email {} already exists", request.email());
+            throw new ValidationException("Email already exists");
+        }
 
-        var token = jwtService.generateToken(user);
-        logger.info("Registration completed successfully for email: {}", request.email());
-        return AuthResponse.builder()
-                .token(token)
-                .build();
+        try {
+            String decryptedPassword = keyPairService.decryptPassword(request.password());
+
+            // Create member first
+            Member member = Member.builder()
+                    .name(request.name())
+                    .email(request.email())
+                    .phoneNumber(request.phoneNumber())
+                    .build();
+            Member savedMember = memberService.save(member);
+            logger.debug("Created member with ID: {}", savedMember.getId());
+
+            // Create user account with decrypted and then hashed password
+            var user = User.builder()
+                    .email(request.email())
+                    .password(passwordEncoder.encode(decryptedPassword))
+                    .role(Role.ROLE_USER)
+                    .memberId(savedMember.getId())
+                    .build();
+            userRepository.save(user);
+            logger.debug("Created user account for member ID: {}", savedMember.getId());
+
+            var token = jwtService.generateToken(user);
+            logger.info("Registration completed successfully for email: {}", request.email());
+            return AuthResponse.builder()
+                    .token(token)
+                    .build();
+        } catch (Exception e) {
+            logger.error("Registration failed for email: {}", request.email(), e);
+            throw new ValidationException("Registration failed: " + e.getMessage());
+        }
     }
 
     public AuthResponse authenticate(AuthRequest request) {
         logger.info("Processing authentication request for email: {}", request.email());
         String decryptedPassword = keyPairService.decryptPassword(request.password());
-        
+
         authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(
                         request.email(),
@@ -69,11 +85,11 @@ public class AuthenticationService {
                 )
         );
 
-        var user = userRepository.findByEmail(request.email())
-                .orElseThrow();
+        var user = userRepository.findByEmail(request.email()).orElseThrow();
         var token = jwtService.generateToken(user);
         logger.info("Authentication successful for email: {}", request.email());
-        return AuthResponse.builder()
+        return AuthResponse
+                .builder()
                 .token(token)
                 .build();
     }

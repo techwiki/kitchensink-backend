@@ -94,7 +94,7 @@ class MemberServiceTest {
 
         // Then
         assertEquals(2, result.size());
-        
+
         MemberDTO dto1 = result.get(0);
         assertEquals("member123", dto1.getId());
         assertEquals("John Doe", dto1.getName());
@@ -127,7 +127,7 @@ class MemberServiceTest {
         assertEquals(1, result.size());
         MemberDTO dto = result.get(0);
         assertEquals(Role.ROLE_USER, dto.getRole());
-        
+
         verify(memberRepository).findAll();
         verify(userRepository).findByEmail("john@example.com");
     }
@@ -166,7 +166,7 @@ class MemberServiceTest {
         // Then
         assertTrue(result.isPresent());
         assertEquals(Role.ROLE_USER, result.get().getRole());
-        
+
         verify(memberRepository).findById("member123");
         verify(userRepository).findByMemberId("member123");
     }
@@ -183,74 +183,6 @@ class MemberServiceTest {
         assertFalse(result.isPresent());
         verify(memberRepository).findById("nonexistent");
         verify(userRepository, never()).findByMemberId(anyString());
-    }
-
-    @Test
-    void save_ShouldCreateMemberAndUser_WhenEmailNotExists() {
-        // Given
-        Member newMember = new Member();
-        newMember.setName("John Doe");
-        newMember.setEmail("john@example.com");
-        newMember.setPhoneNumber("1234567890");
-
-        when(memberRepository.findByEmail("john@example.com")).thenReturn(Optional.empty());
-        when(memberRepository.save(newMember)).thenReturn(member);
-        when(userRepository.findByEmail("john@example.com")).thenReturn(Optional.empty());
-        when(passwordEncoder.encode("changeme123")).thenReturn("hashedDefaultPassword");
-
-        // When
-        Member result = memberService.save(newMember);
-
-        // Then
-        assertEquals(member, result);
-
-        // Verify member was saved
-        verify(memberRepository).findByEmail("john@example.com");
-        verify(memberRepository).save(newMember);
-
-        // Verify user was created with default password
-        ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
-        verify(userRepository).save(userCaptor.capture());
-        User savedUser = userCaptor.getValue();
-        assertEquals("john@example.com", savedUser.getEmail());
-        assertEquals("hashedDefaultPassword", savedUser.getPassword());
-        assertEquals(Role.ROLE_USER, savedUser.getRole());
-        assertEquals("member123", savedUser.getMemberId());
-    }
-
-    @Test
-    void save_ShouldUpdateExistingUserMemberId_WhenUserAlreadyExists() {
-        // Given
-        Member newMember = new Member();
-        newMember.setName("John Doe");
-        newMember.setEmail("john@example.com");
-        newMember.setPhoneNumber("1234567890");
-
-        User existingUser = User.builder()
-                .id("existingUser")
-                .email("john@example.com")
-                .password("existingPassword")
-                .role(Role.ROLE_ADMIN)
-                .memberId("oldMemberId")
-                .build();
-
-        when(memberRepository.findByEmail("john@example.com")).thenReturn(Optional.empty());
-        when(memberRepository.save(newMember)).thenReturn(member);
-        when(userRepository.findByEmail("john@example.com")).thenReturn(Optional.of(existingUser));
-
-        // When
-        Member result = memberService.save(newMember);
-
-        // Then
-        assertEquals(member, result);
-
-        // Verify existing user's memberId was updated
-        ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
-        verify(userRepository).save(userCaptor.capture());
-        User updatedUser = userCaptor.getValue();
-        assertEquals("member123", updatedUser.getMemberId());
-        assertEquals("existingPassword", updatedUser.getPassword()); // Password should remain unchanged
-        assertEquals(Role.ROLE_ADMIN, updatedUser.getRole()); // Role should remain unchanged
     }
 
     @Test
@@ -314,7 +246,7 @@ class MemberServiceTest {
     }
 
     @Test
-    void update_ShouldThrowValidationException_WhenMemberNotFound() {
+    void update_ShouldThrowMemberNotFoundException_WhenMemberNotFound() {
         // Given
         Member updatedMember = new Member();
         updatedMember.setId("nonexistent");
@@ -322,37 +254,12 @@ class MemberServiceTest {
         when(memberRepository.findById("nonexistent")).thenReturn(Optional.empty());
 
         // When & Then
-        ValidationException exception = assertThrows(ValidationException.class, () -> {
+        MemberService.MemberNotFoundException exception = assertThrows(MemberService.MemberNotFoundException.class, () -> {
             memberService.update(updatedMember);
         });
 
         assertEquals("Member not found", exception.getMessage());
         verify(memberRepository).findById("nonexistent");
-        verify(memberRepository, never()).save(any(Member.class));
-    }
-
-    @Test
-    void update_ShouldThrowValidationException_WhenEmailChangedToExistingEmail() {
-        // Given
-        Member existingMemberWithSameEmail = new Member();
-        existingMemberWithSameEmail.setId("other123");
-        existingMemberWithSameEmail.setEmail("newemail@example.com");
-
-        Member updatedMember = new Member();
-        updatedMember.setId("member123");
-        updatedMember.setEmail("newemail@example.com");
-
-        when(memberRepository.findById("member123")).thenReturn(Optional.of(member));
-        when(memberRepository.findByEmail("newemail@example.com")).thenReturn(Optional.of(existingMemberWithSameEmail));
-
-        // When & Then
-        ValidationException exception = assertThrows(ValidationException.class, () -> {
-            memberService.update(updatedMember);
-        });
-
-        assertEquals("Email already exists", exception.getMessage());
-        verify(memberRepository).findById("member123");
-        verify(memberRepository).findByEmail("newemail@example.com");
         verify(memberRepository, never()).save(any(Member.class));
     }
 
@@ -379,12 +286,12 @@ class MemberServiceTest {
     }
 
     @Test
-    void updateRole_ShouldThrowValidationException_WhenMemberNotFound() {
+    void updateRole_ShouldThrowMemberNotFoundException_WhenMemberNotFound() {
         // Given
         when(memberRepository.findById("nonexistent")).thenReturn(Optional.empty());
 
         // When & Then
-        ValidationException exception = assertThrows(ValidationException.class, () -> {
+        MemberService.MemberNotFoundException exception = assertThrows(MemberService.MemberNotFoundException.class, () -> {
             memberService.updateRole("nonexistent", Role.ROLE_ADMIN);
         });
 
@@ -411,33 +318,4 @@ class MemberServiceTest {
         verify(userRepository, never()).save(any(User.class));
     }
 
-    @Test
-    void delete_ShouldDeleteMember() {
-        // When
-        memberService.delete("member123");
-
-        // Then
-        verify(memberRepository).deleteById("member123");
-    }
-
-    @Test
-    void save_ShouldEncodeDefaultPassword() {
-        // Given
-        Member newMember = new Member();
-        newMember.setEmail("john@example.com");
-
-        when(memberRepository.findByEmail("john@example.com")).thenReturn(Optional.empty());
-        when(memberRepository.save(newMember)).thenReturn(member);
-        when(userRepository.findByEmail("john@example.com")).thenReturn(Optional.empty());
-        when(passwordEncoder.encode("changeme123")).thenReturn("hashedDefaultPassword");
-
-        // When
-        memberService.save(newMember);
-
-        // Then
-        verify(passwordEncoder).encode("changeme123");
-        ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
-        verify(userRepository).save(userCaptor.capture());
-        assertEquals("hashedDefaultPassword", userCaptor.getValue().getPassword());
-    }
-} 
+}

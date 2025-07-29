@@ -3,6 +3,7 @@ package org.jboss.quickstarts.kitchensink.controller;
 import jakarta.validation.Valid;
 import jakarta.validation.ValidationException;
 import lombok.RequiredArgsConstructor;
+import org.jboss.quickstarts.kitchensink.dto.RegisterRequest;
 import org.jboss.quickstarts.kitchensink.dto.RoleUpdateRequest;
 import org.jboss.quickstarts.kitchensink.model.Member;
 import org.jboss.quickstarts.kitchensink.model.Role;
@@ -44,9 +45,9 @@ public class MemberController {
 
     @PostMapping
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
-    public ResponseEntity<Member> createMember(@Valid @RequestBody Member member) {
+    public ResponseEntity<MemberDTO> createMember(@Valid @RequestBody RegisterRequest request) {
         try {
-            Member savedMember = memberService.save(member);
+            MemberDTO savedMember = memberService.createMemberWithUser(request);
             return ResponseEntity.status(HttpStatus.CREATED).body(savedMember);
         } catch (ValidationException e) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, e.getMessage());
@@ -54,20 +55,21 @@ public class MemberController {
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<Member> updateMember(
+    public ResponseEntity<MemberDTO> updateMember(
             @PathVariable String id,
-            @Valid @RequestBody Member member,
+            @Valid @RequestBody MemberDTO memberDTO,
             @AuthenticationPrincipal User user
     ) {
         if (!user.getRole().equals(Role.ROLE_ADMIN) && !user.getMemberId().equals(id)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
         }
         try {
+            Member member = memberDTO.toMember();
             member.setId(id);
             Member updatedMember = memberService.update(member);
-            return ResponseEntity.ok(updatedMember);
+            return ResponseEntity.ok(MemberDTO.fromMember(updatedMember, memberDTO.getRole()));
         } catch (ValidationException e) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, e.getMessage());
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         } catch (MemberNotFoundException e) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
         }
